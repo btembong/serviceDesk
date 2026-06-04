@@ -1,0 +1,244 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  CUSTOMER
+  AGENT
+  ADMIN
+}
+
+enum TicketCategory {
+  ACCOUNT_VERIFICATION
+  PIN_RESET
+  TRANSACTION_ISSUE
+  CARD_SERVICES
+  LOAN_CREDIT
+  DIGITAL_BANKING
+  INFO_UPDATE
+  COMPLAINT_FEEDBACK
+}
+
+enum TicketStatus {
+  OPEN
+  IN_REVIEW
+  ESCALATED
+  RESOLVED
+  REJECTED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum KycStatus {
+  PENDING
+  VERIFIED
+  FAILED
+  MANUAL_REVIEW
+}
+
+enum IdType {
+  NATIONAL_ID
+  PASSPORT
+  DRIVERS_LICENSE
+}
+
+enum NotificationType {
+  TICKET_CREATED
+  TICKET_UPDATED
+  TICKET_RESOLVED
+  TICKET_REJECTED
+  KYC_VERIFIED
+  KYC_FAILED
+  OTP_SENT
+  SLA_BREACH
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  password          String?
+  firstName         String
+  lastName          String
+  phone             String?
+  role              Role      @default(CUSTOMER)
+  accountNumber     String?   @unique
+  isActive          Boolean   @default(true)
+  failedLoginCount  Int       @default(0)
+  lockedUntil       DateTime?
+  gdprConsent       Boolean   @default(false)
+  gdprConsentAt     DateTime?
+  gdprConsentIp     String?
+  notifyEmail           Boolean   @default(true)
+  notifySms             Boolean   @default(true)
+  deletionRequestedAt   DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tickets           Ticket[]  @relation("CustomerTickets")
+  assignedTickets   Ticket[]  @relation("AgentTickets")
+  comments          TicketComment[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+  otpCodes          OtpCode[]
+  passwordResets    PasswordResetToken[]
+  kycRecords        KycRecord[]
+
+  @@map("users")
+}
+
+model Ticket {
+  id              String          @id @default(uuid())
+  ticketNumber    String          @unique
+  category        TicketCategory
+  subject         String
+  description     String
+  status          TicketStatus    @default(OPEN)
+  priority        TicketPriority  @default(NORMAL)
+  customerId      String
+  agentId         String?
+  mergedIntoId    String?
+  reopenCount     Int             @default(0)
+  resolvedAt      DateTime?
+  slaDeadline     DateTime?
+  slaBreach       Boolean         @default(false)
+  metadata        Json?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  customer        User            @relation("CustomerTickets", fields: [customerId], references: [id])
+  agent           User?           @relation("AgentTickets", fields: [agentId], references: [id])
+  mergedInto      Ticket?         @relation("MergedTickets", fields: [mergedIntoId], references: [id])
+  mergedTickets   Ticket[]        @relation("MergedTickets")
+  comments        TicketComment[]
+  kycRecord       KycRecord?
+
+  @@map("tickets")
+}
+
+model TicketComment {
+  id         String   @id @default(uuid())
+  ticketId   String
+  authorId   String
+  body       String
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  ticket     Ticket   @relation(fields: [ticketId], references: [id])
+  author     User     @relation(fields: [authorId], references: [id])
+
+  @@map("ticket_comments")
+}
+
+model KycRecord {
+  id              String    @id @default(uuid())
+  ticketId        String    @unique
+  userId          String
+  idType          IdType?
+  idImagePath     String?
+  selfiePath      String?
+  ocrName         String?
+  ocrDob          String?
+  ocrIdNumber     String?
+  ocrExpiry       String?
+  ocrRaw          Json?
+  faceMatchScore  Float?
+  livenessPass    Boolean?
+  status          KycStatus @default(PENDING)
+  failureReason   String?
+  verifiedAt      DateTime?
+  imagesDeletedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  ticket          Ticket    @relation(fields: [ticketId], references: [id])
+  user            User      @relation(fields: [userId], references: [id])
+
+  @@map("kyc_records")
+}
+
+model OtpCode {
+  id        String   @id @default(uuid())
+  userId    String
+  code      String
+  action    String
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@map("otp_codes")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@map("password_reset_tokens")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  read      Boolean          @default(false)
+  ticketId  String?
+  createdAt DateTime         @default(now())
+
+  user      User             @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  action      String
+  entityType  String
+  entityId    String?
+  description String
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model ReferenceCustomer {
+  id            String   @id @default(uuid())
+  accountNumber String   @unique
+  firstName     String
+  lastName      String
+  email         String?  @unique
+  phone         String?  @unique
+  branch        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("reference_customers")
+}
