@@ -7,6 +7,8 @@
         },
         "backend": {
             "root": "backend",
+            "framework": "nextjs",
+            "entrypoint": "serviceDesk/backend",
             "routePrefix": "/_/backend"
         }
     }
